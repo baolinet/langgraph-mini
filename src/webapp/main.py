@@ -18,10 +18,9 @@ async def graphs():
 async def run_graph(request: Request):
     try:
         data = await request.json()
-        graph_id = data.get("graph_id")
+        graph_id = data.get("graph_id", "agent")
         input_data = data.get("input", {})
-        if graph_id != "agent":
-            raise HTTPException(status_code=404, detail="Graph 'agent' not found")
+        # 只要走主graph即可，内部已调度
         result = await graph.ainvoke(input_data)
         return {
             "status": "success",

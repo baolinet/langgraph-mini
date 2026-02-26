@@ -1,22 +1,30 @@
-# tools.py - 工具定义
 from langchain_core.tools import tool
+# tools.py - 工具定义
 
 @tool
-def search_web(query: str) -> str:
-    """搜索网络信息，返回相关结果"""
-    return f"🔍 搜索'{query}'：LangGraph是构建复杂Agent的强大框架"
+def get_user_id(user_name: str) -> str:
+    """根据用户名查询用户ID（模拟）"""
+    # 实际应查数据库，这里模拟
+    return "user-123"
 
 @tool
-def calculator(expression: str) -> str:
-    """计算数学表达式，支持+ - * / ()"""
-    try:
-        result = eval(expression)
-        return f"🧮 {expression} = {result}"
-    except Exception as e:
-        return f"❌ 计算失败: {str(e)}"
+def get_order_by_user_id(user_id: str) -> dict:
+    """根据用户ID查询订单信息（模拟）"""
+    # 实际应查数据库，这里模拟
+    return {"order_id": "order-456", "status": "已发货"}
 
-tools = [search_web, calculator]
+@tool
+def get_logistics_by_order_id(order_id: str) -> str:
+    """根据订单号查询物流状态（模拟）"""
+    # 实际应查物流系统，这里模拟
+    return "快递已到达配送站，预计明天送达"
+
+tools_order = [get_user_id, get_order_by_user_id]
+tools_logistics = [get_user_id, get_order_by_user_id, get_logistics_by_order_id]
+
+# 工具字典（便于graph.py调用）
 tools_dict = {
-    "search_web": search_web,
-    "calculator": calculator
+    "get_user_id": get_user_id,
+    "get_order_by_user_id": get_order_by_user_id,
+    "get_logistics_by_order_id": get_logistics_by_order_id
 }

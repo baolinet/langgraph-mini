@@ -1,57 +1,32 @@
-# graph.py - LangGraph Agent定义
-from .tools import tools, tools_dict
+# graph.py - 多workflow主调度
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from typing_extensions import TypedDict, Annotated
-import os
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-
-load_dotenv()
+from .intent_agent import intent_classify
+from .order_graph import order_graph
+from .logistics_graph import logistics_graph
 
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
-async def call_model(state: State):
-    model = ChatOpenAI(
-        model="kimi-k2-thinking",
-        temperature=0,
-        base_url=os.environ.get("OPENAI_BASE_URL"),
-        api_key=os.environ.get("OPENAI_API_KEY")
-    )
-    model_with_tools = model.bind_tools(tools)
-    response = await model_with_tools.ainvoke(state["messages"])
-    return {"messages": [response]}
-
-async def execute_tools(state: State):
-    last_message = state["messages"][-1]
-    results = []
-    tool_calls = getattr(last_message, 'tool_calls', [])
-    for tool_call in tool_calls:
-        tool_name = tool_call['name']
-        tool_args = tool_call['args']
-        tool_func = tools_dict.get(tool_name, lambda x: "未知工具")
-        tool_result = tool_func.invoke(tool_args)
-        results.append(AIMessage(
-            content=str(tool_result),
-            tool_call_id=tool_call['id']
-        ))
-    return {"messages": results}
-
-def should_continue(state: State):
-    last_message = state["messages"][-1]
-    if last_message.tool_calls:
-        return "tools"
-    return END
+async def intent_router(state: State):
+    """意图识别agent，调度不同子workflow"""
+    intent = await intent_classify(state["messages"])
+    if intent == "order":
+        # 调用订单workflow
+        result = await order_graph.ainvoke(state)
+        return {"messages": result["messages"]}
+    elif intent == "logistics":
+        # 调用物流workflow
+        result = await logistics_graph.ainvoke(state)
+        return {"messages": result["messages"]}
+    else:
+        # 无关问题
+        return {"messages": [AIMessage(content="对不起，我还不清楚您的问题该如何解决")]} 
 
 workflow = StateGraph(State)
-workflow.add_node("agent", call_model)
-workflow.add_node("tools", execute_tools)
-workflow.add_edge(START, "agent")
-workflow.add_conditional_edges("agent", should_continue, {
-    "tools": "tools",
-    END: END
-})
-workflow.add_edge("tools", "agent")
+workflow.add_node("intent_router", intent_router)
+workflow.add_edge(START, "intent_router")
+workflow.add_edge("intent_router", END)
 graph = workflow.compile()
