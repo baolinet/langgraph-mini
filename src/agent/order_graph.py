@@ -7,15 +7,15 @@ from typing_extensions import TypedDict, Annotated
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    user_id: str
 
 async def call_order_agent(state: State):
-    # 1. 获取用户身份
-    user_name = state["messages"][0].content  # 假设第一个消息是用户名
-    user_id = tools_dict["get_user_id"].invoke({"user_name": user_name})
+    # 1. 直接从 state 获取已解析的用户身份
+    user_id = state["user_id"]
     # 2. 查询订单
     order = tools_dict["get_order_by_user_id"].invoke({"user_id": user_id})
     # 3. 回复订单状态

@@ -4,7 +4,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 async def intent_classify(messages: list[BaseMessage]):
     """调用大模型识别意图，返回intent: order/logistics/other"""

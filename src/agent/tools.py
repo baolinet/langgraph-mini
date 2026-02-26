@@ -1,5 +1,18 @@
 from langchain_core.tools import tool
+from typing import Optional
 # tools.py - 工具定义
+
+# 模拟 token -> 用户信息映射表（实际应查 Redis/DB 中的 session）
+_TOKEN_USER_MAP = {
+    "token-alice": {"user_id": "user-001", "user_name": "Alice"},
+    "token-bob":   {"user_id": "user-002", "user_name": "Bob"},
+}
+
+def resolve_user_by_token(access_token: Optional[str]) -> Optional[dict]:
+    """根据 access_token 解析用户身份，返回 {user_id, user_name}，无效则返回 None"""
+    if not access_token:
+        return None
+    return _TOKEN_USER_MAP.get(access_token)
 
 @tool
 def get_user_id(user_name: str) -> str:

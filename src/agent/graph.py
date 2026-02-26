@@ -9,21 +9,22 @@ from .logistics_graph import logistics_graph
 
 class State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    user_id: str
 
 async def intent_router(state: State):
     """意图识别agent，调度不同子workflow"""
     intent = await intent_classify(state["messages"])
     if intent == "order":
-        # 调用订单workflow
+        # 调用订单workflow，透传 user_id
         result = await order_graph.ainvoke(state)
         return {"messages": result["messages"]}
     elif intent == "logistics":
-        # 调用物流workflow
+        # 调用物流workflow，透传 user_id
         result = await logistics_graph.ainvoke(state)
         return {"messages": result["messages"]}
     else:
         # 无关问题
-        return {"messages": [AIMessage(content="对不起，我还不清楚您的问题该如何解决")]} 
+        return {"messages": [AIMessage(content="对不起，我还不清楚您的问题该如何解决")]}
 
 workflow = StateGraph(State)
 workflow.add_node("intent_router", intent_router)
