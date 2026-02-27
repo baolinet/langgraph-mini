@@ -1,5 +1,6 @@
 # graph.py - 多workflow主调度
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from .state import State
@@ -10,6 +11,8 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
+
+checkpointer = MemorySaver()
 
 
 async def general_task_handler(state: State):
@@ -44,4 +47,4 @@ workflow = StateGraph(State)
 workflow.add_node("intent_router", intent_router)
 workflow.add_edge(START, "intent_router")
 workflow.add_edge("intent_router", END)
-graph = workflow.compile()
+graph = workflow.compile(checkpointer=checkpointer)

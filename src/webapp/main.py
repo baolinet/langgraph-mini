@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 from src.webapp.routers import router
 from src.agent import GRAPH_REGISTRY, resolve_user_by_token
+from src.auth import default_session_service, default_session_manager, create_session_token
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,10 +20,12 @@ class RunInput(BaseModel):
 class RunRequest(BaseModel):
     graph_id: Optional[str] = "agent"
     access_token: str = "token-alice"
+    session_token: Optional[str] = None
     input: RunInput
 
 app = FastAPI(title="LangGraph FastAPI Agent")
 app.include_router(router)
+
 
 @app.get("/graphs/mermaid/all")
 async def all_graphs_mermaid():
@@ -51,6 +54,8 @@ async def health():
 
 @app.post("/runs/wait")
 async def run_graph(body: RunRequest):
+    from src.agent.graph import checkpointer
+    
     target_graph = GRAPH_REGISTRY.get(body.graph_id)
     if target_graph is None:
         raise HTTPException(status_code=404, detail=f"未知的 graph_id: {body.graph_id}，可选值: {list(GRAPH_REGISTRY.keys())}")
@@ -59,20 +64,67 @@ async def run_graph(body: RunRequest):
     if user_info is None:
         raise HTTPException(status_code=401, detail="无效的 access_token，请重新登录")
 
+    session_token = body.session_token
+    if session_token is None:
+        session_token = create_session_token(user_info["user_id"])
+        
     try:
+        from langchain_core.messages import HumanMessage
+        
+        config = {"configurable": {"thread_id": session_token}}
+        
+        existing_state = target_graph.get_state(config)
+        if existing_state and existing_state.values:
+            history_messages = list(existing_state.values.get("messages", []))
+        else:
+            history_messages = []
+        
+        all_messages = list(history_messages)
+        for msg in body.input.messages:
+            all_messages.append(HumanMessage(content=msg.content))
+        
         input_data = {
-            **body.input.model_dump(),
+            "messages": all_messages,
             "user_id": user_info["user_id"],
         }
-        logger.info(f"User authenticated: user_id={user_info['user_id']}, user_name={user_info['user_name']}, graph_id={body.graph_id}")
+        logger.info(f"User authenticated: user_id={user_info['user_id']}, user_name={user_info['user_name']}, graph_id={body.graph_id}, session={session_token}, history_count={len(history_messages)}")
 
-        result = await target_graph.ainvoke(input_data)
+        result = await target_graph.ainvoke(input_data, config=config)
+        
+        new_state = target_graph.get_state(config)
+        if new_state and new_state.values:
+            final_messages = new_state.values.get("messages", [])
+            final_count = len(final_messages)
+        else:
+            final_count = 0
+        
         return {
             "status": "success",
             "result": result,
             "graph_id": body.graph_id,
             "user_id": user_info["user_id"],
+            "session_token": session_token,
+            "history_count": final_count
         }
     except Exception as e:
         logger.error(f"Agent execution error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Agent执行失败: {str(e)}")
+
+@app.get("/sessions/{session_token}/history")
+async def get_session_history(session_token: str):
+    """获取会话历史"""
+    history = default_session_service.get_session_history_api(session_token)
+    return {
+        "status": "success",
+        "session_token": session_token,
+        "messages": history
+    }
+
+@app.get("/sessions/{session_token}/delete")
+async def clear_session(session_token: str):
+    """清空会话历史"""
+    from src.auth import default_session_manager
+    success = default_session_manager.clear_session(session_token)
+    if success:
+        return {"status": "success", "message": "会话已清空"}
+    raise HTTPException(status_code=404, detail="会话不存在")

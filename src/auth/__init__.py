@@ -19,6 +19,9 @@ from .session import (
     RagContextManager,
     default_session_manager,
     default_rag_manager,
+    default_session_service,
+    SessionService,
+    create_session_token,
 )
 
 __all__ = [
@@ -41,4 +44,7 @@ __all__ = [
     "RagContextManager",
     "default_session_manager",
     "default_rag_manager",
+    "default_session_service",
+    "SessionService",
+    "create_session_token",
 ]

@@ -1,10 +1,28 @@
 # auth/session.py - 用户会话管理模块
-from typing import Optional, Protocol, Any
+from typing import Optional, Protocol, Any, List
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from collections import deque
 import json
 import hashlib
+
+
+def create_session_token(user_id: str) -> str:
+    """创建新的 session token"""
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    return f"session_{user_id}_{timestamp}"
+
+# LangChain 消息类型（延迟导入避免循环依赖）
+Message = None
+
+
+def _get_message_classes():
+    """延迟导入 LangChain 消息类"""
+    global Message
+    if Message is None:
+        from langchain_core.messages import HumanMessage, AIMessage
+        Message = {"human": HumanMessage, "ai": AIMessage}
+    return Message
 
 
 @dataclass
@@ -22,6 +40,15 @@ class ConversationMessage:
             "timestamp": self.timestamp.isoformat(),
             "metadata": self.metadata,
         }
+    
+    @staticmethod
+    def from_dict(data: dict) -> "ConversationMessage":
+        return ConversationMessage(
+            role=data["role"],
+            content=data["content"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            metadata=data.get("metadata", {}),
+        )
 
 
 @dataclass
@@ -60,6 +87,27 @@ class Session:
         """清空会话"""
         self.messages.clear()
         self.updated_at = datetime.now()
+    
+    def to_langchain_messages(self) -> list:
+        """转换为 LangChain 消息格式"""
+        msg_classes = _get_message_classes()
+        result = []
+        for msg in self.messages:
+            if msg.role == "user":
+                result.append(msg_classes["human"](content=msg.content))
+            elif msg.role == "assistant":
+                result.append(msg_classes["ai"](content=msg.content))
+        return result
+    
+    @staticmethod
+    def from_langchain_messages(messages: list, session_id: str, user_id: str) -> "Session":
+        """从 LangChain 消息创建会话"""
+        session = Session(session_id=session_id, user_id=user_id)
+        for msg in messages:
+            role = "user" if msg.type == "human" else "assistant"
+            content = msg.content if hasattr(msg, "content") else str(msg)
+            session.add_message(role, content)
+        return session
 
 
 class SessionStore(Protocol):
@@ -317,3 +365,72 @@ class RagContextManager:
 default_session_store = InMemorySessionStore()
 default_session_manager = SessionManager(default_session_store)
 default_rag_manager = RagContextManager(default_session_manager)
+
+
+class SessionService:
+    """会话服务 - 处理 FastAPI 会话相关逻辑"""
+    
+    def __init__(self, session_manager: SessionManager):
+        self._manager = session_manager
+    
+    def get_or_create_session(self, session_token: Optional[str], user_id: str) -> tuple[str, Session]:
+        """获取或创建会话"""
+        if session_token:
+            session = self._manager.get_session(session_token)
+            if session:
+                return session_token, session
+        
+        new_session = self._manager.create_session(user_id)
+        return new_session.session_id, new_session
+    
+    def get_session_messages(self, session_token: str) -> list:
+        """获取会话消息（LangChain 格式）"""
+        session = self._manager.get_session(session_token)
+        if session:
+            return session.to_langchain_messages()
+        return []
+    
+    def add_messages(self, session_token: str, user_messages: list, ai_message: str, user_id: str = "anonymous") -> None:
+        """保存用户和 AI 消息（自动创建会话）"""
+        session = self._manager.get_session(session_token)
+        if not session:
+            self._manager.create_session(user_id, session_token)
+        
+        for msg in user_messages:
+            if hasattr(msg, "content"):
+                self._manager.add_user_message(session_token, msg.content)
+        if ai_message:
+            self._manager.add_assistant_message(session_token, ai_message)
+    
+    def get_history_count(self, session_token: str) -> int:
+        """获取历史消息数量"""
+        history = self._manager.get_conversation_history(session_token)
+        return len(history)
+    
+    def get_session_info(self, session_token: str) -> Optional[dict]:
+        """获取会话信息"""
+        session = self._manager.get_session(session_token)
+        if not session:
+            return None
+        return {
+            "session_id": session.session_id,
+            "user_id": session.user_id,
+            "created_at": session.created_at.isoformat(),
+            "updated_at": session.updated_at.isoformat(),
+            "message_count": session.get_message_count(),
+        }
+    
+    def get_session_history_api(self, session_token: str) -> list:
+        """获取会话历史（API 格式）"""
+        history = self._manager.get_conversation_history(session_token)
+        return [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                "timestamp": msg.timestamp.isoformat()
+            }
+            for msg in history
+        ]
+
+
+default_session_service = SessionService(default_session_manager)
