@@ -1,19 +1,13 @@
 # main.py - FastAPI入口
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from .routers import router
-from src.agent.graph import graph
-from src.agent.order_graph import order_graph
-from src.agent.logistics_graph import logistics_graph
-from src.agent.tools import resolve_user_by_token
+from src.webapp.routers import router
+from src.agent import GRAPH_REGISTRY, resolve_user_by_token
 
-# 图注册表，与 langgraph.json 中的 graph_id 对应
-GRAPH_REGISTRY = {
-    "agent":     graph,
-    "order":     order_graph,
-    "logistics": logistics_graph,
-}
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Message(BaseModel):
     role: str
@@ -35,7 +29,6 @@ async def all_graphs_mermaid():
     combined = "graph TB\n"
     for name, g in GRAPH_REGISTRY.items():
         mermaid_lines = g.get_graph().draw_mermaid().splitlines()
-        # 跳过 --- front-matter 和 graph TD/TB 声明行，只保留节点和边
         body_lines = [
             line for line in mermaid_lines
             if line.strip() and not line.strip().startswith("---")
@@ -47,7 +40,6 @@ async def all_graphs_mermaid():
         combined += f"subgraph {name}\n"
         combined += "\n".join(body_lines) + "\n"
         combined += "end\n"
-    # 手动补充跨图路由边（intent_router → 子图入口）
     combined += "agent:::default\n"
     combined += "intent_router -->|order| order\n"
     combined += "intent_router -->|logistics| logistics\n"
@@ -59,25 +51,21 @@ async def health():
 
 @app.post("/runs/wait")
 async def run_graph(body: RunRequest):
-    # 1. 校验 graph_id
     target_graph = GRAPH_REGISTRY.get(body.graph_id)
     if target_graph is None:
-        return {"status": "failure", "result": {"detail": f"未知的 graph_id: {body.graph_id}，可选值: {list(GRAPH_REGISTRY.keys())}"}}
+        raise HTTPException(status_code=404, detail=f"未知的 graph_id: {body.graph_id}，可选值: {list(GRAPH_REGISTRY.keys())}")
 
-    # 2. 根据 access_token 解析用户身份
     user_info = resolve_user_by_token(body.access_token)
     if user_info is None:
-        return {"status": "failure", "result": {"detail": "无效的 access_token，请重新登录"}}
+        raise HTTPException(status_code=401, detail="无效的 access_token，请重新登录")
 
     try:
-        # 3. 构造 graph 输入，注入 user_id
         input_data = {
             **body.input.model_dump(),
             "user_id": user_info["user_id"],
         }
-        print(f"🔑 用户已鉴权: user_id={user_info['user_id']}, user_name={user_info['user_name']}, graph_id={body.graph_id}")
+        logger.info(f"User authenticated: user_id={user_info['user_id']}, user_name={user_info['user_name']}, graph_id={body.graph_id}")
 
-        # 4. 按 graph_id 路由到对应的图
         result = await target_graph.ainvoke(input_data)
         return {
             "status": "success",
@@ -86,5 +74,5 @@ async def run_graph(body: RunRequest):
             "user_id": user_info["user_id"],
         }
     except Exception as e:
-        print(f"❌ Agent执行错误: {str(e)}")
-        return {"status": "failure", "result": {"detail": f"Agent执行失败: {str(e)}"}}
+        logger.error(f"Agent execution error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Agent执行失败: {str(e)}")

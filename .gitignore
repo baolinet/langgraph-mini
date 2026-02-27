@@ -2,4 +2,5 @@
 /.env
 /.langgraph_api
 /.vscode
+/langgraph_mini.egg-info
 **/__pycache__
