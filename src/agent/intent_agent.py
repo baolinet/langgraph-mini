@@ -1,12 +1,37 @@
 # intent_agent.py - 意图识别 Agent（重构版）
-from typing import Optional
 from functools import lru_cache
+import os
 
 from langchain_core.messages import HumanMessage, BaseMessage
 
-from ..constants import IntentType, DefaultConfig
-from ..llm import create_model_auto
-from .workflow_loader import get_main_workflow_config, find_node_by_id
+from ..constants import IntentType
+from ..llm import ModelConfig, Provider, Credential, default_model_factory, default_credential_manager
+from ..db import get_db
+
+
+def _get_api_key_from_env(provider: Provider) -> str:
+    """从环境变量获取 API Key"""
+    env_map = {
+        Provider.OPENAI: "OPENAI_API_KEY",
+        Provider.ZHIPU: "ZHIPU_API_KEY",
+        Provider.MOONSHOT: "MOONSHOT_API_KEY",
+        Provider.DEEPSEEK: "DEEPSEEK_API_KEY",
+        Provider.ANTHROPIC: "ANTHROPIC_API_KEY",
+        Provider.AZURE_OPENAI: "AZURE_OPENAI_API_KEY",
+    }
+
+    env_var = env_map.get(provider)
+    if not env_var:
+        raise ValueError(f"未知的 provider: {provider}")
+
+    api_key = os.getenv(env_var)
+    if not api_key:
+        raise ValueError(
+            f"未设置 {provider.value} 的 API Key 环境变量 ({env_var})。\n"
+            f"请设置环境变量或在数据库的 credentials 表中配置真实的 API Key。"
+        )
+
+    return api_key
 
 # 合法的意图值集合（用于严格匹配）
 _VALID_INTENTS = {e.value for e in IntentType}
@@ -14,18 +39,50 @@ _VALID_INTENTS = {e.value for e in IntentType}
 
 @lru_cache(maxsize=1)
 def _get_intent_model():
-    """懒加载意图识别模型，从 YAML 配置读取参数（使用新的模型管理）"""
-    cfg = get_main_workflow_config()
-    params = find_node_by_id(cfg, "intent_router").get("params", {})
+    """懒加载意图识别模型，从数据库读取配置"""
+    # 从数据库获取节点的模型配置
+    db = get_db()
+    model_record = db.get_node_model_config("main_workflow", "intent_router")
 
-    model_name = params.get("model", DefaultConfig.DEFAULT_INTENT_MODEL)
-    temperature = params.get("temperature", DefaultConfig.DEFAULT_INTENT_TEMPERATURE)
+    if not model_record:
+        raise ValueError(
+            "未找到意图路由器的模型配置。\n"
+            "请在数据库中添加该节点的模型配置：\n"
+            "  1. 确保 workflow_nodes 表中存在记录 (workflow_name='main_workflow', node_id='intent_router')\n"
+            "  2. 在 node_model_configs 表中为该节点配置模型"
+        )
 
-    return create_model_auto(
+    # 使用数据库中的配置
+    provider_name = model_record["provider_name"]
+    model_name = model_record["model_name"]
+    credential_name = model_record["credential_name"]
+    temperature = model_record.get("temperature", 0.7)
+
+    # 创建并注册凭证（如果不存在）
+    if not default_credential_manager.get_credential(credential_name):
+        # 从数据库获取 API Key，如果是占位符则从环境变量读取
+        api_key = model_record.get("api_key")
+        if not api_key or api_key.startswith(("sk-xxx", "zhipu-xxx", "kimi-xxx")):
+            # 从环境变量读取真实的 API Key
+            provider_enum = Provider(provider_name)
+            api_key = _get_api_key_from_env(provider_enum)
+
+        credential = Credential(
+            provider=Provider(provider_name),
+            api_key=api_key,
+            base_url=model_record.get("base_url"),
+        )
+        default_credential_manager.add_credential(credential_name, credential)
+
+    model_config = ModelConfig(
+        provider=Provider(provider_name),
         model_name=model_name,
         temperature=temperature,
-        credential_name="default"
+        credential_name=credential_name,
     )
+
+    cache_key = f"intent_{model_config.model_name}"
+    return default_model_factory.create_model(model_config, cache_key)
 
 
 async def intent_classify(messages: list[BaseMessage]) -> str:

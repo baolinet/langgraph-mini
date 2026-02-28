@@ -52,7 +52,7 @@ PROVIDER_DEFAULTS = {
     },
     Provider.ZHIPU: {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "models": ["glm-4", "glm-4-plus", "glm-4-flash"],
+        "models": ["glm-4", "glm-4-plus", "glm-4.7"],
     },
     Provider.MOONSHOT: {
         "base_url": "https://api.moonshot.cn/v1",

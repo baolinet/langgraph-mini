@@ -219,8 +219,8 @@ INSERT OR IGNORE INTO credentials (name, provider_id, api_key, base_url, descrip
 -- 示例模型配置
 INSERT OR IGNORE INTO models (name, model_name, provider_id, credential_id, temperature, display_name, description) VALUES
 ('intent_classifier', 'kimi-k2-thinking', 3, 1, 0.7, '意图分类器', '用于识别用户意图'),
-('order_agent', 'glm-4-flash', 2, 2, 0.0, '订单处理 Agent', '处理订单相关查询'),
-('logistics_agent', 'glm-4-flash', 2, 2, 0.0, '物流处理 Agent', '处理物流相关查询'),
+('order_agent', 'glm-4.7', 2, 2, 0.0, '订单处理 Agent', '处理订单相关查询'),
+('logistics_agent', 'glm-4.7', 2, 2, 0.0, '物流处理 Agent', '处理物流相关查询'),
 ('general_agent', 'kimi-k2-thinking', 3, 1, 0.7, '通用对话 Agent', '处理通用任务和对话');
 
 -- 示例工作流节点
