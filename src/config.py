@@ -1,12 +1,14 @@
 # config.py - 配置加载统一入口
 import os
+import yaml
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from functools import lru_cache
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).parent
-CONFIG_DIR = BASE_DIR / "configs"
+BASE_DIR = Path(__file__).parent          # src/
+PROJECT_DIR = BASE_DIR.parent             # 项目根目录
+CONFIG_DIR = PROJECT_DIR / "configs"
 WORKFLOW_CONFIG_DIR = CONFIG_DIR / "workflows"
 
 load_dotenv(override=True)
@@ -14,9 +16,6 @@ load_dotenv(override=True)
 
 class Config:
     """全局配置类"""
-
-    def __init__(self):
-        self._env_loaded = False
 
     @property
     def openai_api_key(self) -> str:
@@ -46,13 +45,12 @@ class Config:
 config = Config()
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=None)
 def load_yaml(filename: str) -> Dict[str, Any]:
-    """加载YAML配置文件"""
+    """加载 YAML 配置文件（带全量缓存）"""
     config_path = WORKFLOW_CONFIG_DIR / filename
     if not config_path.exists():
         raise FileNotFoundError(f"配置文件不存在: {config_path}")
-    import yaml
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -75,6 +73,6 @@ def get_tools_config() -> Dict[str, Any]:
     return load_yaml("tools.yaml")
 
 
-def reload_configs():
+def reload_configs() -> None:
     """清除缓存，重新加载所有配置"""
     load_yaml.cache_clear()

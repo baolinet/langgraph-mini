@@ -1,8 +1,11 @@
 # auth/auth.py - 用户身份认证模块
+from abc import ABC, abstractmethod
 from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
+
+from ..constants import HttpHeader
 
 
 @dataclass
@@ -25,11 +28,13 @@ class AuthContext:
     metadata: Optional[dict] = None
 
 
-class TokenValidator:
-    """Token 验证器基类"""
-    
+class TokenValidator(ABC):
+    """Token 验证器抽象基类"""
+
+    @abstractmethod
     def validate(self, token: str) -> Optional[UserIdentity]:
-        raise NotImplementedError
+        """验证 token 并返回用户身份，无效则返回 None"""
+        ...
 
 
 class InMemoryTokenValidator(TokenValidator):
@@ -86,20 +91,19 @@ class DeviceIdentity:
     @staticmethod
     def get_device_id(headers: dict) -> Optional[str]:
         """从请求头获取设备 ID"""
-        device_id = (
-            headers.get("X-Device-ID") or 
-            headers.get("X-DeviceId") or
-            headers.get("Device-ID")
+        return (
+            headers.get(HttpHeader.DEVICE_ID)
+            or headers.get(HttpHeader.DEVICE_ID_ALT)
+            or headers.get(HttpHeader.DEVICE_ID_ALT2)
         )
-        return device_id
-    
+
     @staticmethod
     def get_device_info(headers: dict) -> dict:
         """获取设备信息"""
         return {
             "device_id": DeviceIdentity.get_device_id(headers),
-            "user_agent": headers.get("User-Agent"),
-            "ip": headers.get("X-Forwarded-For") or headers.get("X-Real-IP"),
+            "user_agent": headers.get(HttpHeader.USER_AGENT),
+            "ip": headers.get(HttpHeader.X_FORWARDED_FOR) or headers.get(HttpHeader.X_REAL_IP),
         }
     
     @staticmethod

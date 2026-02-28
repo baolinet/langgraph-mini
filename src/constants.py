@@ -32,7 +32,7 @@ class DefaultConfig:
     """默认配置常量"""
     DEFAULT_MODEL = "glm-4.7"
     DEFAULT_TEMPERATURE = 0.0
-    DEFAULT_INTENT_MODEL = "kimi-k2-thinking"
+    DEFAULT_INTENT_MODEL = "glm-4.7"
     DEFAULT_INTENT_TEMPERATURE = 0.7
     MAX_MESSAGES_HISTORY = 100
     SESSION_EXPIRE_SECONDS = 3600

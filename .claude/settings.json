@@ -1,0 +1,15 @@
+{
+  "allowedToolPatterns": {
+    "Bash": [
+      "python -c *",
+      "python test_*.py",
+      "sh test_*.sh",
+      "pytest*",
+      "pip list*",
+      "ls*",
+      "cat*",
+      "head*",
+      "tail*"
+    ]
+  }
+}

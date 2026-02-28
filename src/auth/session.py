@@ -1,8 +1,7 @@
 # auth/session.py - 用户会话管理模块
-from typing import Optional, Protocol, Any, List
+from typing import Optional, Protocol, Any
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from collections import deque
 import json
 import hashlib
 
@@ -288,7 +287,17 @@ class SessionManager:
         session.context[key] = value
         self._store.save(session)
         return True
-    
+
+    def trim_messages(self, session_id: str, keep_count: int = 10) -> bool:
+        """裁剪会话消息，只保留最近 keep_count 条"""
+        session = self._store.get(session_id)
+        if not session:
+            return False
+        if session.get_message_count() > keep_count:
+            session.messages = session.messages[-keep_count:]
+            self._store.save(session)
+        return True
+
     @staticmethod
     def _generate_session_id(user_id: str) -> str:
         """生成会话 ID"""
@@ -319,24 +328,12 @@ class RagContextManager:
             })
         return context
     
-    def summarize_old_messages(self, session_id: str) -> bool:
+    def summarize_old_messages(self, session_id: str, keep_count: int = 10) -> bool:
         """
-        压缩旧消息（简化实现：保留最近 N 条）
-        生产环境可接入 LLM 进行摘要
+        压缩旧消息（简化实现：保留最近 keep_count 条）
+        生产环境可接入 LLM 进行摘要压缩。
         """
-        session = self._session_manager.get_session(session_id)
-        if not session:
-            return False
-        
-        # 保留最近 10 条消息
-        keep_count = 10
-        if session.get_message_count() <= keep_count:
-            return True
-        
-        recent = session.messages[-keep_count:]
-        session.messages = recent
-        self._session_manager._store.save(session)
-        return True
+        return self._session_manager.trim_messages(session_id, keep_count)
     
     def get_relevant_history(self, session_id: str, query: str, top_k: int = 3) -> list[str]:
         """

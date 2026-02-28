@@ -14,5 +14,7 @@ dependencies = [
     "typing_extensions==4.12.2",
     "pydantic==2.9.2",
     "langgraph-cli[inmem]>=0.1.55",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
 ]
 
