@@ -5,7 +5,22 @@ from pydantic import BaseModel
 from typing import Optional
 from src.webapp.routers import router
 from src.agent import GRAPH_REGISTRY, resolve_user_by_token
-from src.auth import default_session_service, default_session_manager, create_session_token
+from src.auth import create_session_token
+
+# session_token -> 实际 thread_id 的映射表
+# 清空会话时重新生成 thread_id，绕过 MemorySaver 不支持删除的限制
+_session_thread_ids: dict[str, str] = {}
+
+def _get_thread_id(session_token: str) -> str:
+    """获取 session_token 对应的实际 thread_id"""
+    return _session_thread_ids.get(session_token, session_token)
+
+def _reset_thread_id(session_token: str) -> str:
+    """清空会话：将 session_token 映射到新的 thread_id"""
+    from datetime import datetime
+    new_id = f"{session_token}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    _session_thread_ids[session_token] = new_id
+    return new_id
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,10 +63,6 @@ async def all_graphs_mermaid():
     combined += "intent_router -->|logistics| logistics\n"
     return {"status": "success", "mermaid": combined}
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "graph": "agent ready"}
-
 @app.post("/runs/wait")
 async def run_graph(body: RunRequest):
     from src.agent.graph import checkpointer
@@ -67,11 +78,12 @@ async def run_graph(body: RunRequest):
     session_token = body.session_token
     if session_token is None:
         session_token = create_session_token(user_info["user_id"])
-        
+
     try:
         from langchain_core.messages import HumanMessage
-        
-        config = {"configurable": {"thread_id": session_token}}
+
+        thread_id = _get_thread_id(session_token)
+        config = {"configurable": {"thread_id": thread_id}}
         
         existing_state = target_graph.get_state(config)
         if existing_state and existing_state.values:
@@ -110,21 +122,32 @@ async def run_graph(body: RunRequest):
         logger.error(f"Agent execution error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Agent执行失败: {str(e)}")
 
-@app.get("/sessions/{session_token}/history")
-async def get_session_history(session_token: str):
-    """获取会话历史"""
-    history = default_session_service.get_session_history_api(session_token)
+@app.get("/sessions/{session_token}")
+async def get_session_history(session_token: str, graph_id: str = "agent"):
+    """获取会话历史（从 LangGraph checkpointer 读取）"""
+    target_graph = GRAPH_REGISTRY.get(graph_id)
+    if target_graph is None:
+        raise HTTPException(status_code=404, detail=f"未知的 graph_id: {graph_id}")
+
+    thread_id = _get_thread_id(session_token)
+    config = {"configurable": {"thread_id": thread_id}}
+    state = target_graph.get_state(config)
+
+    messages = []
+    if state and state.values:
+        for msg in state.values.get("messages", []):
+            role = "user" if getattr(msg, "type", "") == "human" else "assistant"
+            content = msg.content if hasattr(msg, "content") else str(msg)
+            messages.append({"role": role, "content": content})
+
     return {
         "status": "success",
         "session_token": session_token,
-        "messages": history
+        "messages": messages
     }
 
-@app.get("/sessions/{session_token}/delete")
+@app.post("/sessions/{session_token}/clear")
 async def clear_session(session_token: str):
-    """清空会话历史"""
-    from src.auth import default_session_manager
-    success = default_session_manager.clear_session(session_token)
-    if success:
-        return {"status": "success", "message": "会话已清空"}
-    raise HTTPException(status_code=404, detail="会话不存在")
+    """清空会话历史（重置 thread_id，下次对话从头开始）"""
+    _reset_thread_id(session_token)
+    return {"status": "success", "message": "会话已清空"}

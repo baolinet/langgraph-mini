@@ -1,0 +1,23 @@
+# order_workflow.yaml - 订单处理工作流配置
+name: order_workflow
+description: 订单处理工作流，使用 Tool Calling
+
+agent:
+  type: react_agent
+  model: glm-4.7
+  temperature: 0
+  tools:
+    - get_user_id
+    - get_order_by_user_id
+
+nodes:
+  - id: order_agent
+    type: agent
+    description: 订单处理 Agent
+    system_prompt: "用户 ID 是 {user_id}。你需要查询用户的订单信息。请使用 get_order_by_user_id 工具查询。"
+
+edges:
+  - from: __start__
+    to: order_agent
+  - from: order_agent
+    to: __end__

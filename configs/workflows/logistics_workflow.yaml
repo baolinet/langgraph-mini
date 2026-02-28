@@ -1,0 +1,28 @@
+# logistics_workflow.yaml - 物流处理工作流配置
+name: logistics_workflow
+description: 物流处理工作流，使用 Tool Calling
+
+agent:
+  type: react_agent
+  model: glm-4.7
+  temperature: 0
+  tools:
+    - get_user_id
+    - get_order_by_user_id
+    - get_logistics_by_order_id
+
+nodes:
+  - id: logistics_agent
+    type: agent
+    description: 物流处理 Agent
+    system_prompt: |
+      用户 ID 是 {user_id}。你需要查询用户的物流信息。
+      请按以下步骤操作：
+      1. 先使用 get_order_by_user_id 获取用户订单
+      2. 再使用 get_logistics_by_order_id 查询物流状态
+
+edges:
+  - from: __start__
+    to: logistics_agent
+  - from: logistics_agent
+    to: __end__

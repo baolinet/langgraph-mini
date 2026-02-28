@@ -10,3 +10,8 @@ def index():
 @router.get("/ping")
 def ping():
     return {"msg": "pong"}
+
+
+@router.get("/health")
+async def health():
+    return {"status": "healthy", "graph": "agent ready"}

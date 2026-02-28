@@ -1,0 +1,29 @@
+# main_workflow.yaml - 主工作流配置（意图路由）
+name: main_workflow
+description: 主工作流，负责意图识别和子工作流调度
+
+nodes:
+  - id: intent_router
+    type: intent_router
+    description: 意图识别节点，调度到不同子工作流
+    params:
+      model: kimi-k2-thinking
+      temperature: 0.7
+      intent_mapping:
+        order: order_workflow
+        logistics: logistics_workflow
+        general: general_task
+      default_response: "对不起，我还不清楚您的问题该如何解决"
+
+edges:
+  - from: __start__
+    to: intent_router
+  - from: intent_router
+    to: __end__
+
+general_task:
+  type: general_handler
+  description: 通用任务处理器
+  params:
+    model: kimi-k2-thinking
+    temperature: 0.7

@@ -22,7 +22,7 @@ echo -e "\n\n=== Test 3: Get session history ==="
 curl -s "$BASE_URL/sessions/$SESSION_TOKEN"
 
 echo -e "\n\n=== Test 4: Clear session ==="
-curl -s -X DELETE "$BASE_URL/sessions/$SESSION_TOKEN"
+curl -s -X POST "$BASE_URL/sessions/$SESSION_TOKEN/clear"
 
 echo -e "\n\n=== Test 5: Complex task (no session) ==="
 curl -s -X POST "$BASE_URL/runs/wait" \
